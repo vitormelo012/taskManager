@@ -20,8 +20,9 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // Incrementar versão
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
   }
 
@@ -33,9 +34,18 @@ class DatabaseService {
         description TEXT,
         completed INTEGER NOT NULL,
         priority TEXT NOT NULL,
-        createdAt TEXT NOT NULL
+        createdAt TEXT NOT NULL,
+        dueDate TEXT,
+        categoryId TEXT NOT NULL DEFAULT 'other'
       )
     ''');
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE tasks ADD COLUMN dueDate TEXT');
+      await db.execute('ALTER TABLE tasks ADD COLUMN categoryId TEXT NOT NULL DEFAULT "other"');
+    }
   }
 
   Future<Task> create(Task task) async {
@@ -62,6 +72,28 @@ class DatabaseService {
     final db = await database;
     const orderBy = 'createdAt DESC';
     final result = await db.query('tasks', orderBy: orderBy);
+    return result.map((map) => Task.fromMap(map)).toList();
+  }
+
+  Future<List<Task>> readByCategory(String categoryId) async {
+    final db = await database;
+    final result = await db.query(
+      'tasks',
+      where: 'categoryId = ?',
+      whereArgs: [categoryId],
+      orderBy: 'createdAt DESC',
+    );
+    return result.map((map) => Task.fromMap(map)).toList();
+  }
+
+  Future<List<Task>> readAllSortedByDueDate() async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT * FROM tasks 
+      ORDER BY 
+        CASE WHEN dueDate IS NULL THEN 1 ELSE 0 END,
+        dueDate ASC
+    ''');
     return result.map((map) => Task.fromMap(map)).toList();
   }
 
