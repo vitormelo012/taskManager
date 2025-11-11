@@ -21,7 +21,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 4,  // VERSÃO FINAL COM TODOS OS CAMPOS
+      version: 5,  // VERSÃO 5: Múltiplas fotos
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -41,6 +41,7 @@ class DatabaseService {
         completed $intType,
         createdAt $textType,
         photoPath TEXT,
+        photos TEXT,
         completedAt TEXT,
         completedBy TEXT,
         latitude REAL,
@@ -63,6 +64,17 @@ class DatabaseService {
       await db.execute('ALTER TABLE tasks ADD COLUMN latitude REAL');
       await db.execute('ALTER TABLE tasks ADD COLUMN longitude REAL');
       await db.execute('ALTER TABLE tasks ADD COLUMN locationName TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute('ALTER TABLE tasks ADD COLUMN photos TEXT');
+      // Migrar photoPath existente para photos
+      await db.execute('''
+        UPDATE tasks 
+        SET photos = CASE 
+          WHEN photoPath IS NOT NULL THEN '["' || photoPath || '"]'
+          ELSE '[]'
+        END
+      ''');
     }
     print('✅ Banco migrado de v$oldVersion para v$newVersion');
   }

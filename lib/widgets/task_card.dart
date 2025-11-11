@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/task.dart';
-import '../services/location_service.dart';
 
 class TaskCard extends StatelessWidget {
   final Task task;
@@ -291,38 +290,63 @@ class TaskCard extends StatelessWidget {
               ),
             ),
 
-            // PREVIEW DA FOTO
-            if (task.hasPhoto)
-              ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(12),
-                  bottomRight: Radius.circular(12),
-                ),
-                child: Image.file(
-                  File(task.photoPath!),
-                  width: double.infinity,
-                  height: 180,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
+            // GALERIA DE FOTOS
+            if (task.hasPhotos)
+              Container(
+                height: 120,
+                padding: const EdgeInsets.all(8),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: task.photos.length,
+                  itemBuilder: (context, index) {
                     return Container(
-                      height: 180,
-                      color: Colors.grey[200],
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      width: 100,
+                      margin: const EdgeInsets.only(right: 8),
+                      child: Stack(
                         children: [
-                          Icon(
-                            Icons.broken_image_outlined,
-                            size: 48,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Foto não encontrada',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              File(task.photos[index]),
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey[200],
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    size: 32,
+                                    color: Colors.grey[400],
+                                  ),
+                                );
+                              },
                             ),
                           ),
+                          // Número da foto
+                          if (task.photos.length > 1)
+                            Positioned(
+                              bottom: 4,
+                              right: 4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '${index + 1}/${task.photos.length}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     );

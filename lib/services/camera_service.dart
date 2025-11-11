@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../screens/camera_screen.dart';
@@ -10,6 +11,7 @@ class CameraService {
   CameraService._init();
 
   List<CameraDescription>? _cameras;
+  final ImagePicker _picker = ImagePicker();
 
   Future<void> initialize() async {
     try {
@@ -105,5 +107,133 @@ class CameraService {
       print('❌ Erro ao deletar foto: $e');
       return false;
     }
+  }
+
+  // GALERIA DE FOTOS
+  Future<String?> pickFromGallery(BuildContext context) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+
+      if (image == null) return null;
+
+      final savedPath = await savePicture(image);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📷 Foto selecionada da galeria!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      return savedPath;
+    } catch (e) {
+      print('❌ Erro ao selecionar da galeria: $e');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao acessar galeria: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+
+      return null;
+    }
+  }
+
+  // DIALOG PARA ESCOLHER ENTRE CÂMERA E GALERIA
+  Future<String?> showPhotoSourceDialog(BuildContext context) async {
+    return showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'Adicionar Foto',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.camera_alt, color: Colors.blue),
+                ),
+                title: const Text('Tirar Foto'),
+                subtitle: const Text('Use a câmera do dispositivo'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final photoPath = await takePicture(context);
+                  if (context.mounted && photoPath != null) {
+                    Navigator.pop(context, photoPath);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.photo_library, color: Colors.green),
+                ),
+                title: const Text('Escolher da Galeria'),
+                subtitle: const Text('Selecione uma foto existente'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final photoPath = await pickFromGallery(context);
+                  if (context.mounted && photoPath != null) {
+                    Navigator.pop(context, photoPath);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.close, color: Colors.red),
+                ),
+                title: const Text('Cancelar'),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
