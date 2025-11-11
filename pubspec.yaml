@@ -36,7 +36,7 @@ dependencies:
   camera: ^0.10.5+9              # Câmera
   permission_handler: ^11.3.1    # Gerenciamento de permissões
   sensors_plus: ^4.0.2           # Sensores (acelerômetro)
-  vibration: ^1.8.4              # Feedback tátil
+  vibration: ^2.0.0              # Feedback tátil
   geolocator: ^10.1.0            # GPS
   geocoding: ^2.1.1              # Endereços
   path_provider: ^2.1.1          # Para salvar fotos
