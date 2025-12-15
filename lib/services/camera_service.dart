@@ -16,7 +16,8 @@ class CameraService {
   Future<void> initialize() async {
     try {
       _cameras = await availableCameras();
-      print('✅ CameraService: ${_cameras?.length ?? 0} câmera(s) encontrada(s)');
+      print(
+          '✅ CameraService: ${_cameras?.length ?? 0} câmera(s) encontrada(s)');
     } catch (e) {
       print('⚠️ Erro ao inicializar câmera: $e');
       _cameras = [];

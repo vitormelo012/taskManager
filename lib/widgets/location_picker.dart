@@ -45,7 +45,8 @@ class _LocationPickerState extends State<LocationPicker> {
     setState(() => _isLoading = true);
 
     try {
-      final result = await LocationService.instance.getCurrentLocationWithAddress();
+      final result =
+          await LocationService.instance.getCurrentLocationWithAddress();
 
       if (result != null && mounted) {
         setState(() {
@@ -152,9 +153,7 @@ class _LocationPickerState extends State<LocationPicker> {
               fontWeight: FontWeight.bold,
             ),
           ),
-
           const SizedBox(height: 16),
-
           TextField(
             controller: _addressController,
             decoration: InputDecoration(
@@ -170,9 +169,7 @@ class _LocationPickerState extends State<LocationPicker> {
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => _searchAddress(),
           ),
-
           const SizedBox(height: 16),
-
           const Row(
             children: [
               Expanded(child: Divider()),
@@ -183,9 +180,7 @@ class _LocationPickerState extends State<LocationPicker> {
               Expanded(child: Divider()),
             ],
           ),
-
           const SizedBox(height: 16),
-
           ElevatedButton.icon(
             onPressed: _isLoading ? null : _getCurrentLocation,
             icon: _isLoading
@@ -205,7 +200,6 @@ class _LocationPickerState extends State<LocationPicker> {
               padding: const EdgeInsets.all(16),
             ),
           ),
-
           if (_latitude != null && _longitude != null) ...[
             const SizedBox(height: 16),
             Card(

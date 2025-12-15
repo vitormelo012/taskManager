@@ -1,10 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/task.dart';
+import '../models/task_offline.dart';
 import '../services/database_service.dart';
 import '../services/camera_service.dart';
 import '../services/location_service.dart';
 import '../widgets/location_picker.dart';
+import '../providers/task_provider_offline.dart';
 
 class TaskFormScreen extends StatefulWidget {
   final Task? task;
@@ -57,11 +60,12 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
   // CAMERA METHODS
   Future<void> _addPhoto() async {
-    final photoPath = await CameraService.instance.showPhotoSourceDialog(context);
+    final photoPath =
+        await CameraService.instance.showPhotoSourceDialog(context);
 
     if (photoPath != null && mounted) {
       setState(() => _photos.add(photoPath));
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('📷 Foto ${_photos.length} adicionada!'),
@@ -144,9 +148,12 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final provider = context.read<TaskProviderOffline>();
+      
       if (widget.task == null) {
-        // CRIAR
-        final newTask = Task(
+        // CRIAR - Converter Task para TaskOffline
+        final newTaskOffline = TaskOffline(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
           title: _titleController.text.trim(),
           description: _descriptionController.text.trim(),
           priority: _priority,
@@ -155,20 +162,61 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           latitude: _latitude,
           longitude: _longitude,
           locationName: _locationName,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          syncStatus: SyncStatus.pending,
+          version: 1,
         );
-        await DatabaseService.instance.create(newTask);
+        
+        await provider.createTask(newTaskOffline);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✓ Tarefa criada'),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Text('✓ Tarefa criada'),
+                  const Spacer(),
+                  Icon(
+                    provider.isOnline ? Icons.cloud_done : Icons.cloud_off,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
               backgroundColor: Colors.green,
             ),
           );
         }
       } else {
-        // ATUALIZAR
-        final updatedTask = widget.task!.copyWith(
+        // ATUALIZAR - Buscar TaskOffline existente ou criar novo
+        final tasks = await provider.getTasks();
+        TaskOffline existingTask;
+        
+        try {
+          existingTask = tasks.firstWhere(
+            (t) => t.id == widget.task!.id.toString(),
+          );
+        } catch (e) {
+          // Se não encontrar, criar um novo baseado no Task
+          existingTask = TaskOffline(
+            id: widget.task!.id.toString(),
+            title: widget.task!.title,
+            description: widget.task!.description,
+            priority: widget.task!.priority,
+            completed: widget.task!.completed,
+            photos: widget.task!.photos,
+            latitude: widget.task!.latitude,
+            longitude: widget.task!.longitude,
+            locationName: widget.task!.locationName,
+            createdAt: widget.task!.createdAt,
+            updatedAt: DateTime.now(),
+            syncStatus: SyncStatus.pending,
+            version: 1,
+          );
+        }
+        
+        final updatedTask = existingTask.copyWith(
           title: _titleController.text.trim(),
           description: _descriptionController.text.trim(),
           priority: _priority,
@@ -177,13 +225,25 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           latitude: _latitude,
           longitude: _longitude,
           locationName: _locationName,
+          updatedAt: DateTime.now(),
         );
-        await DatabaseService.instance.update(updatedTask);
+        
+        await provider.updateTask(updatedTask);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✓ Tarefa atualizada'),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Text('✓ Tarefa atualizada'),
+                  const Spacer(),
+                  Icon(
+                    provider.isOnline ? Icons.cloud_done : Icons.cloud_off,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
               backgroundColor: Colors.blue,
             ),
           );
@@ -191,7 +251,6 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       }
 
       if (mounted) Navigator.pop(context, true);
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -268,7 +327,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
                     // PRIORIDADE
                     DropdownButtonFormField<String>(
-                      value: _priority,
+                      initialValue: _priority,
                       decoration: const InputDecoration(
                         labelText: 'Prioridade',
                         prefixIcon: Icon(Icons.flag),
@@ -276,9 +335,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                       ),
                       items: const [
                         DropdownMenuItem(value: 'low', child: Text('🟢 Baixa')),
-                        DropdownMenuItem(value: 'medium', child: Text('🟡 Média')),
+                        DropdownMenuItem(
+                            value: 'medium', child: Text('🟡 Média')),
                         DropdownMenuItem(value: 'high', child: Text('🟠 Alta')),
-                        DropdownMenuItem(value: 'urgent', child: Text('🔴 Urgente')),
+                        DropdownMenuItem(
+                            value: 'urgent', child: Text('🔴 Urgente')),
                       ],
                       onChanged: (value) {
                         if (value != null) setState(() => _priority = value);
@@ -293,9 +354,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                       subtitle: Text(_completed ? 'Sim' : 'Não'),
                       value: _completed,
                       onChanged: (value) => setState(() => _completed = value),
-                      activeColor: Colors.green,
+                      activeThumbColor: Colors.green,
                       secondary: Icon(
-                        _completed ? Icons.check_circle : Icons.radio_button_unchecked,
+                        _completed
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
                         color: _completed ? Colors.green : Colors.grey,
                       ),
                     ),
@@ -370,7 +433,8 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                                         borderRadius: BorderRadius.circular(12),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.black.withOpacity(0.1),
+                                            color:
+                                                Colors.black.withOpacity(0.1),
                                             blurRadius: 8,
                                             offset: const Offset(0, 4),
                                           ),
@@ -400,7 +464,8 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                                           shape: BoxShape.circle,
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Colors.black.withOpacity(0.3),
+                                              color:
+                                                  Colors.black.withOpacity(0.3),
                                               blurRadius: 4,
                                             ),
                                           ],
@@ -484,7 +549,8 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                     if (_latitude != null && _longitude != null)
                       Card(
                         child: ListTile(
-                          leading: const Icon(Icons.location_on, color: Colors.blue),
+                          leading:
+                              const Icon(Icons.location_on, color: Colors.blue),
                           title: Text(_locationName ?? 'Localização salva'),
                           subtitle: Text(
                             LocationService.instance.formatCoordinates(

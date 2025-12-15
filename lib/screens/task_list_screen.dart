@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/task.dart';
-import '../services/database_service.dart';
+import '../models/task_offline.dart';
+import '../models/sync_operation.dart';
 import '../services/sensor_service.dart';
 import '../services/location_service.dart';
 import '../services/camera_service.dart';
 import '../screens/task_form_screen.dart';
 import '../widgets/task_card.dart';
+import '../providers/task_provider_offline.dart';
+import 'dart:async';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
@@ -18,18 +22,116 @@ class _TaskListScreenState extends State<TaskListScreen> {
   List<Task> _tasks = [];
   String _filter = 'all';
   bool _isLoading = true;
+  StreamSubscription<SyncEvent>? _syncSubscription;
+  bool _isOnline = false;
+  bool _isSyncing = false;
 
   @override
   void initState() {
     super.initState();
     _loadTasks();
-    _setupShakeDetection(); // INICIAR SHAKE
+    _setupShakeDetection();
+    _setupSyncListener();
   }
 
   @override
   void dispose() {
-    SensorService.instance.stop(); // PARAR SHAKE
+    SensorService.instance.stop();
+    _syncSubscription?.cancel();
     super.dispose();
+  }
+
+  // LISTENER DE SYNC
+  void _setupSyncListener() {
+    final provider = context.read<TaskProviderOffline>();
+    
+    provider.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isOnline = provider.isOnline;
+        });
+      }
+    });
+
+    _syncSubscription = provider.syncStatusStream.listen((event) {
+      if (!mounted) return;
+
+      switch (event.type) {
+        case SyncEventType.syncStarted:
+          setState(() => _isSyncing = true);
+          break;
+
+        case SyncEventType.syncCompleted:
+          setState(() => _isSyncing = false);
+          _loadTasks();
+          
+          final pushedCount = event.data['pushedCount'] as int? ?? 0;
+          final pulledCount = event.data['pulledCount'] as int? ?? 0;
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Sincronizado: $pushedCount enviadas, $pulledCount recebidas'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          break;
+
+        case SyncEventType.syncError:
+          setState(() => _isSyncing = false);
+          final error = event.data['error'] as String? ?? 'Erro desconhecido';
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Erro na sincronização: $error'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          break;
+
+        case SyncEventType.conflictResolved:
+          final taskId = event.data['taskId'] as String?;
+          final resolution = event.data['resolution'] as String?;
+          _showConflictDialog(taskId, resolution);
+          break;
+      }
+    });
+  }
+
+  void _showConflictDialog(String? taskId, String? resolution) {
+    if (taskId == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Conflito Resolvido'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ID da Tarefa: $taskId'),
+            const SizedBox(height: 8),
+            Text(
+              'Resolução: ${resolution ?? "Versão local prevaleceu (Last-Write-Wins)"}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   // SHAKE DETECTION
@@ -69,17 +171,17 @@ class _TaskListScreenState extends State<TaskListScreen> {
             const Text('Selecione uma tarefa para completar:'),
             const SizedBox(height: 16),
             ...pendingTasks.take(3).map((task) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                task.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.check_circle, color: Colors.green),
-                onPressed: () => _completeTaskByShake(task),
-              ),
-            )),
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    task.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.check_circle, color: Colors.green),
+                    onPressed: () => _completeTaskByShake(task),
+                  ),
+                )),
             if (pendingTasks.length > 3)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -105,13 +207,25 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   Future<void> _completeTaskByShake(Task task) async {
     try {
-      final updated = task.copyWith(
+      final provider = context.read<TaskProviderOffline>();
+      
+      // Converter Task para TaskOffline
+      final taskOffline = TaskOffline(
+        id: task.id?.toString(),
+        title: task.title,
+        description: task.description,
+        photos: task.photos,
         completed: true,
-        completedAt: DateTime.now(),
-        completedBy: 'shake',
+        latitude: task.latitude,
+        longitude: task.longitude,
+        locationName: task.locationName,
+        createdAt: task.createdAt,
+        syncStatus: SyncStatus.pending,
+        version: 1,
+        priority: task.priority,
       );
 
-      await DatabaseService.instance.update(updated);
+      await provider.updateTask(taskOffline);
       Navigator.pop(context);
       await _loadTasks();
 
@@ -140,7 +254,27 @@ class _TaskListScreenState extends State<TaskListScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final tasks = await DatabaseService.instance.readAll();
+      print('📋 Carregando tarefas do provider...');
+      final provider = context.read<TaskProviderOffline>();
+      final tasksOffline = await provider.getTasks();
+      print('📋 Recebidas ${tasksOffline.length} tarefas offline');
+      
+      // Converter TaskOffline para Task para compatibilidade
+      final tasks = tasksOffline.map((t) {
+        print('  - ${t.title} (id: ${t.id})');
+        return Task(
+          id: int.tryParse(t.id),
+          title: t.title,
+          description: t.description,
+          priority: t.priority,
+          completed: t.completed,
+          createdAt: t.createdAt,
+          photos: t.photos,
+          latitude: t.latitude,
+          longitude: t.longitude,
+          locationName: t.locationName,
+        );
+      }).toList();
 
       if (mounted) {
         setState(() {
@@ -148,7 +282,9 @@ class _TaskListScreenState extends State<TaskListScreen> {
           _isLoading = false;
         });
       }
+      print('✅ Tarefas carregadas com sucesso: ${tasks.length} items');
     } catch (e) {
+      print('❌ Erro ao carregar tarefas: $e');
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -204,11 +340,36 @@ class _TaskListScreenState extends State<TaskListScreen> {
       return;
     }
 
-    final nearbyTasks = await DatabaseService.instance.getTasksNearLocation(
-      latitude: position.latitude,
-      longitude: position.longitude,
-      radiusInMeters: 1000,
-    );
+    // Buscar tarefas do provider e filtrar por proximidade
+    final provider = context.read<TaskProviderOffline>();
+    final allTasksOffline = await provider.getTasks();
+    
+    final nearbyTasks = allTasksOffline
+        .where((t) {
+          if (t.latitude == null || t.longitude == null) return false;
+          
+          final distance = LocationService.instance.calculateDistance(
+            position.latitude,
+            position.longitude,
+            t.latitude!,
+            t.longitude!,
+          );
+          
+          return distance <= 1000; // 1km radius
+        })
+        .map((t) => Task(
+              id: t.id != null ? int.tryParse(t.id) : null,
+              title: t.title,
+              description: t.description,
+              photos: t.photos,
+              completed: t.completed,
+              latitude: t.latitude,
+              longitude: t.longitude,
+              locationName: t.locationName,
+              createdAt: t.createdAt,
+              priority: t.priority,
+            ))
+        .toList();
 
     setState(() {
       _tasks = nearbyTasks;
@@ -251,7 +412,8 @@ class _TaskListScreenState extends State<TaskListScreen> {
           await CameraService.instance.deletePhoto(task.photoPath!);
         }
 
-        await DatabaseService.instance.delete(task.id!);
+        final provider = context.read<TaskProviderOffline>();
+        await provider.deleteTask(task.id!.toString());
         await _loadTasks();
 
         if (mounted) {
@@ -277,13 +439,25 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   Future<void> _toggleComplete(Task task) async {
     try {
-      final updated = task.copyWith(
+      final provider = context.read<TaskProviderOffline>();
+      
+      // Converter Task para TaskOffline
+      final taskOffline = TaskOffline(
+        id: task.id?.toString(),
+        title: task.title,
+        description: task.description,
+        photos: task.photos,
         completed: !task.completed,
-        completedAt: !task.completed ? DateTime.now() : null,
-        completedBy: !task.completed ? 'manual' : null,
+        latitude: task.latitude,
+        longitude: task.longitude,
+        locationName: task.locationName,
+        createdAt: task.createdAt,
+        syncStatus: SyncStatus.pending,
+        version: 1,
+        priority: task.priority,
       );
 
-      await DatabaseService.instance.update(updated);
+      await provider.updateTask(taskOffline);
       await _loadTasks();
     } catch (e) {
       if (mounted) {
@@ -304,10 +478,41 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Minhas Tarefas'),
+        title: Row(
+          children: [
+            const Text('Minhas Tarefas'),
+            const SizedBox(width: 12),
+            // INDICADOR DE CONEXÃO E SYNC
+            if (_isSyncing)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            else
+              Icon(
+                _isOnline ? Icons.cloud_done : Icons.cloud_off,
+                size: 20,
+                color: _isOnline ? Colors.greenAccent : Colors.orangeAccent,
+              ),
+          ],
+        ),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
+          // BOTÃO DE SYNC MANUAL
+          if (_isOnline && !_isSyncing)
+            IconButton(
+              icon: const Icon(Icons.sync),
+              tooltip: 'Sincronizar agora',
+              onPressed: () async {
+                final provider = context.read<TaskProviderOffline>();
+                await provider.manualSync();
+              },
+            ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.filter_list),
             onSelected: (value) {
@@ -467,13 +672,15 @@ class _TaskListScreenState extends State<TaskListScreen> {
                                   final result = await Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => TaskFormScreen(task: task),
+                                      builder: (context) =>
+                                          TaskFormScreen(task: task),
                                     ),
                                   );
                                   if (result == true) _loadTasks();
                                 },
                                 onDelete: () => _deleteTask(task),
-                                onCheckboxChanged: (value) => _toggleComplete(task),
+                                onCheckboxChanged: (value) =>
+                                    _toggleComplete(task),
                               );
                             },
                           ),

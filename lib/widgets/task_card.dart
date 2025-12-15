@@ -71,9 +71,9 @@ class TaskCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: task.completed 
-            ? Colors.grey.shade300 
-            : priorityColor.withOpacity(0.3),
+          color: task.completed
+              ? Colors.grey.shade300
+              : priorityColor.withOpacity(0.3),
           width: 2,
         ),
       ),
@@ -93,9 +93,7 @@ class TaskCard extends StatelessWidget {
                     onChanged: onCheckboxChanged,
                     activeColor: Colors.green,
                   ),
-
                   const SizedBox(width: 8),
-
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,12 +103,11 @@ class TaskCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            decoration: task.completed 
-                              ? TextDecoration.lineThrough 
-                              : null,
-                            color: task.completed 
-                              ? Colors.grey 
-                              : Colors.black87,
+                            decoration: task.completed
+                                ? TextDecoration.lineThrough
+                                : null,
+                            color:
+                                task.completed ? Colors.grey : Colors.black87,
                           ),
                         ),
 
@@ -122,9 +119,8 @@ class TaskCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 14,
-                              color: task.completed 
-                                ? Colors.grey 
-                                : Colors.black54,
+                              color:
+                                  task.completed ? Colors.grey : Colors.black54,
                             ),
                           ),
                         ],
@@ -279,7 +275,6 @@ class TaskCard extends StatelessWidget {
                       ],
                     ),
                   ),
-
                   IconButton(
                     onPressed: onDelete,
                     icon: const Icon(Icons.delete_outline),

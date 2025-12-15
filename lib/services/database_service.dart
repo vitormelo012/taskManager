@@ -21,7 +21,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 5,  // VERSÃO 5: Múltiplas fotos
+      version: 5, // VERSÃO 5: Múltiplas fotos
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );

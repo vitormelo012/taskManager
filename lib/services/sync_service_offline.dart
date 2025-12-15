@@ -6,20 +6,22 @@ import 'api_service_offline.dart';
 import 'connectivity_service_offline.dart';
 
 /// Motor de Sincronização Offline-First
-/// 
+///
 /// Implementa sincronização simples usando estratégia Last-Write-Wins (LWW)
 class SyncServiceOffline {
   final DatabaseServiceOffline _db = DatabaseServiceOffline.instance;
   final ApiServiceOffline _api;
-  final ConnectivityServiceOffline _connectivity = ConnectivityServiceOffline.instance;
-  
+  final ConnectivityServiceOffline _connectivity =
+      ConnectivityServiceOffline.instance;
+
   bool _isSyncing = false;
   Timer? _autoSyncTimer;
-  
+
   final _syncStatusController = StreamController<SyncEvent>.broadcast();
   Stream<SyncEvent> get syncStatusStream => _syncStatusController.stream;
 
-  SyncServiceOffline({String userId = 'user1'}) : _api = ApiServiceOffline(userId: userId);
+  SyncServiceOffline({String userId = 'user1'})
+      : _api = ApiServiceOffline(userId: userId);
 
   // ==================== SINCRONIZAÇÃO PRINCIPAL ====================
 
@@ -46,36 +48,35 @@ class SyncServiceOffline {
 
     try {
       print('🔄 Iniciando sincronização...');
-      
+
       // 1. Push: Enviar operações pendentes
       final pushResult = await _pushPendingOperations();
-      
+
       // 2. Pull: Buscar atualizações do servidor
       final pullResult = await _pullFromServer();
-      
+
       // 3. Atualizar timestamp de última sync
       await _db.setMetadata(
         'lastSyncTimestamp',
         DateTime.now().millisecondsSinceEpoch.toString(),
       );
-      
+
       print('✅ Sincronização concluída');
       _notifyStatus(SyncEvent.syncCompleted(
         pushedCount: pushResult,
         pulledCount: pullResult,
       ));
-      
+
       return SyncResult(
         success: true,
         message: 'Sincronização concluída com sucesso',
         pushedOperations: pushResult,
         pulledTasks: pullResult,
       );
-      
     } catch (e) {
       print('❌ Erro na sincronização: $e');
       _notifyStatus(SyncEvent.syncError(e.toString()));
-      
+
       return SyncResult(
         success: false,
         message: 'Erro na sincronização: $e',
@@ -91,7 +92,7 @@ class SyncServiceOffline {
   Future<int> _pushPendingOperations() async {
     final operations = await _db.getPendingSyncOperations();
     print('📤 Enviando ${operations.length} operações pendentes');
-    
+
     int successCount = 0;
 
     for (final operation in operations) {
@@ -101,7 +102,7 @@ class SyncServiceOffline {
         successCount++;
       } catch (e) {
         print('❌ Erro ao processar operação ${operation.id}: $e');
-        
+
         // Incrementar tentativas
         await _db.updateSyncOperation(
           operation.copyWith(
@@ -109,7 +110,7 @@ class SyncServiceOffline {
             error: e.toString(),
           ),
         );
-        
+
         // Se excedeu máximo de tentativas, marcar como failed
         if (operation.retries >= 3) {
           await _db.updateSyncOperation(
@@ -142,7 +143,7 @@ class SyncServiceOffline {
     if (task == null) return;
 
     final serverTask = await _api.createTask(task);
-    
+
     // Atualizar tarefa local com dados do servidor
     await _db.upsertTask(
       task.copyWith(
@@ -158,7 +159,7 @@ class SyncServiceOffline {
     if (task == null) return;
 
     final result = await _api.updateTask(task);
-    
+
     if (result['conflict'] == true) {
       // Conflito detectado - aplicar Last-Write-Wins
       final serverTask = result['serverTask'] as TaskOffline;
@@ -190,15 +191,15 @@ class SyncServiceOffline {
   Future<int> _pullFromServer() async {
     final lastSyncStr = await _db.getMetadata('lastSyncTimestamp');
     final lastSync = lastSyncStr != null ? int.parse(lastSyncStr) : null;
-    
+
     final result = await _api.getTasks(modifiedSince: lastSync);
     final serverTasks = result['tasks'] as List<TaskOffline>;
-    
+
     print('📥 Recebidas ${serverTasks.length} tarefas do servidor');
 
     for (final serverTask in serverTasks) {
       final localTask = await _db.getTask(serverTask.id);
-      
+
       if (localTask == null) {
         // Nova tarefa do servidor
         await _db.upsertTask(
@@ -221,9 +222,10 @@ class SyncServiceOffline {
   // ==================== RESOLUÇÃO DE CONFLITOS (LWW) ====================
 
   /// Resolver conflito usando Last-Write-Wins
-  Future<void> _resolveConflict(TaskOffline localTask, TaskOffline serverTask) async {
+  Future<void> _resolveConflict(
+      TaskOffline localTask, TaskOffline serverTask) async {
     print('⚠️ Conflito detectado: ${localTask.id}');
-    
+
     final localTime = localTask.localUpdatedAt ?? localTask.updatedAt;
     final serverTime = serverTask.updatedAt;
 
@@ -235,7 +237,7 @@ class SyncServiceOffline {
       winningTask = localTask;
       reason = 'Modificação local é mais recente';
       print('🏆 LWW: Versão local vence');
-      
+
       // Enviar versão local para servidor
       await _api.updateTask(localTask);
     } else {
@@ -405,49 +407,6 @@ class SyncResult {
     this.pushedOperations,
     this.pulledTasks,
   });
-}
-
-/// Evento de sincronização
-class SyncEvent {
-  final SyncEventType type;
-  final String? message;
-  final Map<String, dynamic>? data;
-
-  SyncEvent({
-    required this.type,
-    this.message,
-    this.data,
-  });
-
-  factory SyncEvent.syncStarted() => SyncEvent(type: SyncEventType.started);
-  
-  factory SyncEvent.syncCompleted({int? pushedCount, int? pulledCount}) =>
-      SyncEvent(
-        type: SyncEventType.completed,
-        data: {'pushed': pushedCount, 'pulled': pulledCount},
-      );
-  
-  factory SyncEvent.syncError(String error) => SyncEvent(
-        type: SyncEventType.error,
-        message: error,
-      );
-  
-  factory SyncEvent.conflictResolved({
-    required String taskId,
-    required String resolution,
-  }) =>
-      SyncEvent(
-        type: SyncEventType.conflictResolved,
-        message: resolution,
-        data: {'taskId': taskId},
-      );
-}
-
-enum SyncEventType {
-  started,
-  completed,
-  error,
-  conflictResolved,
 }
 
 /// Estatísticas de sincronização

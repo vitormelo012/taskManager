@@ -1,16 +1,20 @@
 import 'package:flutter/foundation.dart';
 import '../models/task_offline.dart';
+import '../models/sync_operation.dart';
 import '../services/database_service_offline.dart';
 import '../services/sync_service_offline.dart';
+import '../services/connectivity_service_offline.dart';
 
 /// Provider para gerenciamento de estado de tarefas
 class TaskProviderOffline with ChangeNotifier {
   final DatabaseServiceOffline _db = DatabaseServiceOffline.instance;
   final SyncServiceOffline _syncService;
+  final ConnectivityServiceOffline _connectivity = ConnectivityServiceOffline.instance;
 
   List<TaskOffline> _tasks = [];
   bool _isLoading = false;
   String? _error;
+  bool _isOnline = false;
 
   TaskProviderOffline({String userId = 'user1'})
       : _syncService = SyncServiceOffline(userId: userId);
@@ -19,27 +23,39 @@ class TaskProviderOffline with ChangeNotifier {
   List<TaskOffline> get tasks => _tasks;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  
+  bool get isOnline => _isOnline;
+  Stream<SyncEvent> get syncStatusStream => _syncService.syncStatusStream;
+
   List<TaskOffline> get completedTasks =>
       _tasks.where((task) => task.completed).toList();
-  
+
   List<TaskOffline> get pendingTasks =>
       _tasks.where((task) => !task.completed).toList();
-  
+
   List<TaskOffline> get unsyncedTasks =>
       _tasks.where((task) => task.syncStatus == SyncStatus.pending).toList();
 
   // ==================== INICIALIZAÇÃO ====================
 
   Future<void> initialize() async {
-    await loadTasks();
+    // Inicializar conectividade
+    await _connectivity.initialize();
+    _isOnline = _connectivity.isOnline;
     
+    await loadTasks();
+
+    // Monitorar conectividade
+    _connectivity.connectivityStream.listen((isConnected) {
+      _isOnline = isConnected;
+      notifyListeners();
+    });
+
     // Iniciar auto-sync
     _syncService.startAutoSync();
-    
+
     // Escutar eventos de sincronização
     _syncService.syncStatusStream.listen((event) {
-      if (event.type == SyncEventType.completed) {
+      if (event.type == SyncEventType.syncCompleted) {
         loadTasks(); // Recarregar tarefas após sync
       }
     });
@@ -55,7 +71,7 @@ class TaskProviderOffline with ChangeNotifier {
       notifyListeners();
 
       _tasks = await _db.getAllTasks();
-      
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -65,8 +81,24 @@ class TaskProviderOffline with ChangeNotifier {
     }
   }
 
-  /// Criar nova tarefa
-  Future<void> createTask({
+  /// Obter todas as tarefas (alias para compatibilidade)
+  Future<List<TaskOffline>> getTasks() async {
+    return await _db.getAllTasks();
+  }
+
+  /// Criar nova tarefa (sobrecarga para aceitar TaskOffline)
+  Future<void> createTask(TaskOffline task) async {
+    try {
+      await _syncService.createTask(task);
+      await loadTasks();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+    }
+  }
+
+  /// Criar nova tarefa (método original)
+  Future<void> createTaskFromParams({
     required String title,
     required String description,
     String priority = 'medium',
@@ -120,6 +152,11 @@ class TaskProviderOffline with ChangeNotifier {
     final result = await _syncService.sync();
     await loadTasks();
     return result;
+  }
+
+  /// Sincronizar manualmente (alias)
+  Future<void> manualSync() async {
+    await sync();
   }
 
   /// Obter estatísticas de sincronização

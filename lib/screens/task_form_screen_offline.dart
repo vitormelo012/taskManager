@@ -75,7 +75,7 @@ class _TaskFormScreenOfflineState extends State<TaskFormScreenOffline> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _priority,
+              initialValue: _priority,
               decoration: const InputDecoration(
                 labelText: 'Prioridade',
                 border: OutlineInputBorder(),
@@ -128,9 +128,13 @@ class _TaskFormScreenOfflineState extends State<TaskFormScreenOffline> {
       } else {
         // Criar nova tarefa
         await provider.createTask(
-          title: _titleController.text.trim(),
-          description: _descriptionController.text.trim(),
-          priority: _priority,
+          TaskOffline(
+            id: DateTime.now().toString(),
+            title: _titleController.text.trim(),
+            description: _descriptionController.text.trim(),
+            priority: _priority,
+            completed: false,
+          ),
         );
       }
 
@@ -139,9 +143,7 @@ class _TaskFormScreenOfflineState extends State<TaskFormScreenOffline> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              widget.task != null
-                  ? '✅ Tarefa atualizada'
-                  : '✅ Tarefa criada',
+              widget.task != null ? '✅ Tarefa atualizada' : '✅ Tarefa criada',
             ),
             backgroundColor: Colors.green,
           ),

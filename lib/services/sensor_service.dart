@@ -42,16 +42,13 @@ class SensorService {
   void _detectShake(AccelerometerEvent event) {
     final now = DateTime.now();
 
-    if (_lastShakeTime != null && 
+    if (_lastShakeTime != null &&
         now.difference(_lastShakeTime!) < _shakeCooldown) {
       return;
     }
 
-    final double magnitude = math.sqrt(
-      event.x * event.x + 
-      event.y * event.y + 
-      event.z * event.z
-    );
+    final double magnitude =
+        math.sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
 
     if (magnitude > _shakeThreshold) {
       print('🔳 Shake! Magnitude: ${magnitude.toStringAsFixed(2)}');

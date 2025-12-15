@@ -20,11 +20,33 @@ class DatabaseServiceOffline {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
+    // TEMPORÁRIO: Apagar banco antigo para forçar recriação com nova estrutura
+    // Comentado após primeira execução bem-sucedida
+    // try {
+    //   await deleteDatabase(path);
+    //   print('🗑️ Banco de dados antigo deletado');
+    // } catch (e) {
+    //   print('ℹ️ Nenhum banco antigo para deletar');
+    // }
+
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // Incrementar versão para forçar migração
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Adicionar colunas novas à tabela tasks_offline
+      await db.execute('ALTER TABLE tasks_offline ADD COLUMN photos TEXT');
+      await db.execute('ALTER TABLE tasks_offline ADD COLUMN latitude REAL');
+      await db.execute('ALTER TABLE tasks_offline ADD COLUMN longitude REAL');
+      await db.execute('ALTER TABLE tasks_offline ADD COLUMN locationName TEXT');
+      
+      print('✅ Banco de dados atualizado para versão 2');
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -41,7 +63,11 @@ class DatabaseServiceOffline {
         updatedAt INTEGER NOT NULL,
         version INTEGER NOT NULL DEFAULT 1,
         syncStatus TEXT NOT NULL,
-        localUpdatedAt INTEGER
+        localUpdatedAt INTEGER,
+        photos TEXT,
+        latitude REAL,
+        longitude REAL,
+        locationName TEXT
       )
     ''');
 
@@ -69,8 +95,10 @@ class DatabaseServiceOffline {
 
     // Índices para otimização
     await db.execute('CREATE INDEX idx_tasks_userId ON tasks_offline(userId)');
-    await db.execute('CREATE INDEX idx_tasks_syncStatus ON tasks_offline(syncStatus)');
-    await db.execute('CREATE INDEX idx_sync_queue_status ON sync_queue(status)');
+    await db.execute(
+        'CREATE INDEX idx_tasks_syncStatus ON tasks_offline(syncStatus)');
+    await db
+        .execute('CREATE INDEX idx_sync_queue_status ON sync_queue(status)');
 
     print('✅ Banco de dados criado com sucesso');
   }
@@ -246,25 +274,21 @@ class DatabaseServiceOffline {
   /// Obter estatísticas do banco de dados
   Future<Map<String, dynamic>> getStats() async {
     final db = await database;
-    
+
     final totalTasks = Sqflite.firstIntValue(
-      await db.rawQuery('SELECT COUNT(*) FROM tasks_offline')
-    ) ?? 0;
-    
-    final unsyncedTasks = Sqflite.firstIntValue(
-      await db.rawQuery(
-        'SELECT COUNT(*) FROM tasks_offline WHERE syncStatus = ?',
-        [SyncStatus.pending.toString()]
-      )
-    ) ?? 0;
-    
-    final queuedOperations = Sqflite.firstIntValue(
-      await db.rawQuery(
-        'SELECT COUNT(*) FROM sync_queue WHERE status = ?',
-        [SyncOperationStatus.pending.toString()]
-      )
-    ) ?? 0;
-    
+            await db.rawQuery('SELECT COUNT(*) FROM tasks_offline')) ??
+        0;
+
+    final unsyncedTasks = Sqflite.firstIntValue(await db.rawQuery(
+            'SELECT COUNT(*) FROM tasks_offline WHERE syncStatus = ?',
+            [SyncStatus.pending.toString()])) ??
+        0;
+
+    final queuedOperations = Sqflite.firstIntValue(await db.rawQuery(
+            'SELECT COUNT(*) FROM sync_queue WHERE status = ?',
+            [SyncOperationStatus.pending.toString()])) ??
+        0;
+
     final lastSync = await getMetadata('lastSyncTimestamp');
 
     return {

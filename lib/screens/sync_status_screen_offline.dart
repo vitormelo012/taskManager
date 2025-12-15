@@ -144,7 +144,8 @@ class SyncStatusScreenOffline extends StatelessWidget {
     );
   }
 
-  Future<void> _handleSync(BuildContext context, TaskProviderOffline provider) async {
+  Future<void> _handleSync(
+      BuildContext context, TaskProviderOffline provider) async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('🔄 Iniciando sincronização...'),
@@ -158,9 +159,7 @@ class SyncStatusScreenOffline extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            result.success
-                ? '✅ ${result.message}'
-                : '❌ ${result.message}',
+            result.success ? '✅ ${result.message}' : '❌ ${result.message}',
           ),
           backgroundColor: result.success ? Colors.green : Colors.red,
         ),

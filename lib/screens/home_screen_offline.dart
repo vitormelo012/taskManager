@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import '../providers/task_provider_offline.dart';
 import '../models/task_offline.dart';
+import '../models/sync_operation.dart';
 import '../services/connectivity_service_offline.dart';
 import 'task_form_screen_offline.dart';
 import 'sync_status_screen_offline.dart';
@@ -22,16 +22,54 @@ class _HomeScreenOfflineState extends State<HomeScreenOffline> {
   void initState() {
     super.initState();
     _initializeConnectivity();
+    _setupSyncListener();
+  }
+
+  void _setupSyncListener() {
+    // Escutar eventos de sincronização do provider
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final provider = context.read<TaskProviderOffline>();
+      provider.syncStatusStream.listen((event) {
+        if (!mounted) return;
+
+        if (event.type == SyncEventType.conflictResolved) {
+          final taskId = event.data!['taskId'] as String?;
+          final resolution = event.data!['resolution'] as String?;
+          if (taskId != null && resolution != null) {
+            _showConflictDialog(taskId, resolution);
+          }
+        } else if (event.type == SyncEventType.syncCompleted) {
+          final pushedCount = event.data!['pushedCount'] as int? ?? 0;
+          final pulledCount = event.data!['pulledCount'] as int? ?? 0;
+          _showSnackBar(
+            '✅ Sincronização concluída: $pushedCount enviadas, $pulledCount recebidas',
+            Colors.green,
+          );
+        } else if (event.type == SyncEventType.syncError) {
+          final error = event.data!['error'] as String? ?? 'Erro desconhecido';
+          _showSnackBar(
+            '❌ Erro na sincronização: $error',
+            Colors.red,
+          );
+        }
+      });
+    });
   }
 
   Future<void> _initializeConnectivity() async {
     await _connectivity.initialize();
+    if (!mounted) return;
+
     setState(() => _isOnline = _connectivity.isOnline);
-    
+
     // Escutar mudanças de conectividade
     _connectivity.connectivityStream.listen((isOnline) {
+      if (!mounted) return;
+
       setState(() => _isOnline = isOnline);
-      
+
       if (isOnline) {
         _showSnackBar('🟢 Conectado - Sincronizando...', Colors.green);
         context.read<TaskProviderOffline>().sync();
@@ -59,14 +97,14 @@ class _HomeScreenOfflineState extends State<HomeScreenOffline> {
         actions: [
           // Indicador de conectividade
           _buildConnectivityIndicator(),
-          
+
           // Botão de sincronização manual
           IconButton(
             icon: const Icon(Icons.sync),
             onPressed: _isOnline ? _handleManualSync : null,
             tooltip: 'Sincronizar',
           ),
-          
+
           // Botão de estatísticas
           IconButton(
             icon: const Icon(Icons.info_outline),
@@ -252,15 +290,34 @@ class _HomeScreenOfflineState extends State<HomeScreenOffline> {
   }
 
   Widget _buildSyncStatusBadge(SyncStatus status) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: _getSyncStatusColor(status).withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        status.icon,
-        style: const TextStyle(fontSize: 10),
+    IconData icon;
+    String tooltip;
+
+    switch (status) {
+      case SyncStatus.synced:
+        icon = Icons.check_circle;
+        tooltip = 'Sincronizado';
+        break;
+      case SyncStatus.pending:
+        icon = Icons.cloud_off;
+        tooltip = 'Pendente de sincronização';
+        break;
+      case SyncStatus.conflict:
+        icon = Icons.warning;
+        tooltip = 'Conflito detectado';
+        break;
+      case SyncStatus.error:
+        icon = Icons.error;
+        tooltip = 'Erro na sincronização';
+        break;
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: Icon(
+        icon,
+        size: 16,
+        color: _getSyncStatusColor(status),
       ),
     );
   }
@@ -280,11 +337,11 @@ class _HomeScreenOfflineState extends State<HomeScreenOffline> {
 
   Future<void> _handleManualSync() async {
     final provider = context.read<TaskProviderOffline>();
-    
+
     _showSnackBar('🔄 Sincronizando...', Colors.blue);
-    
+
     final result = await provider.sync();
-    
+
     if (result.success) {
       _showSnackBar(
         '✅ Sincronização concluída',
@@ -314,7 +371,8 @@ class _HomeScreenOfflineState extends State<HomeScreenOffline> {
     );
   }
 
-  Future<void> _confirmDelete(TaskOffline task, TaskProviderOffline provider) async {
+  Future<void> _confirmDelete(
+      TaskOffline task, TaskProviderOffline provider) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -340,5 +398,62 @@ class _HomeScreenOfflineState extends State<HomeScreenOffline> {
         _showSnackBar('🗑️ Tarefa deletada', Colors.grey);
       }
     }
+  }
+
+  void _showConflictDialog(String taskId, String resolution) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: const [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Conflito Resolvido'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Um conflito foi detectado e resolvido automaticamente usando a estratégia Last-Write-Wins (última escrita vence).',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Resolução:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    resolution,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import 'dart:convert';
 
 /// Modelo de Tarefa com suporte a sincronização offline
 class TaskOffline {
@@ -11,10 +12,16 @@ class TaskOffline {
   final DateTime createdAt;
   final DateTime updatedAt;
   final int version;
-  
+
   // Campos de sincronização
   final SyncStatus syncStatus;
   final DateTime? localUpdatedAt;
+  
+  // Campos adicionais do Task original
+  final List<String> photos;
+  final double? latitude;
+  final double? longitude;
+  final String? locationName;
 
   TaskOffline({
     String? id,
@@ -28,9 +35,14 @@ class TaskOffline {
     this.version = 1,
     this.syncStatus = SyncStatus.synced,
     this.localUpdatedAt,
+    List<String>? photos,
+    this.latitude,
+    this.longitude,
+    this.locationName,
   })  : id = id ?? const Uuid().v4(),
         createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+        updatedAt = updatedAt ?? DateTime.now(),
+        photos = photos ?? [];
 
   /// Criar cópia com modificações
   TaskOffline copyWith({
@@ -42,6 +54,10 @@ class TaskOffline {
     int? version,
     SyncStatus? syncStatus,
     DateTime? localUpdatedAt,
+    List<String>? photos,
+    double? latitude,
+    double? longitude,
+    String? locationName,
   }) {
     return TaskOffline(
       id: id,
@@ -55,6 +71,10 @@ class TaskOffline {
       version: version ?? this.version,
       syncStatus: syncStatus ?? this.syncStatus,
       localUpdatedAt: localUpdatedAt ?? this.localUpdatedAt,
+      photos: photos ?? this.photos,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      locationName: locationName ?? this.locationName,
     );
   }
 
@@ -72,11 +92,25 @@ class TaskOffline {
       'version': version,
       'syncStatus': syncStatus.toString(),
       'localUpdatedAt': localUpdatedAt?.millisecondsSinceEpoch,
+      'photos': jsonEncode(photos),
+      'latitude': latitude,
+      'longitude': longitude,
+      'locationName': locationName,
     };
   }
 
   /// Criar Task a partir de Map
   factory TaskOffline.fromMap(Map<String, dynamic> map) {
+    List<String> photosList = [];
+    if (map['photos'] != null && map['photos'] is String) {
+      try {
+        final decoded = jsonDecode(map['photos'] as String);
+        photosList = List<String>.from(decoded);
+      } catch (e) {
+        print('Erro ao decodificar photos: $e');
+      }
+    }
+    
     return TaskOffline(
       id: map['id'],
       title: map['title'],
@@ -94,6 +128,10 @@ class TaskOffline {
       localUpdatedAt: map['localUpdatedAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['localUpdatedAt'])
           : null,
+      photos: photosList,
+      latitude: map['latitude'] as double?,
+      longitude: map['longitude'] as double?,
+      locationName: map['locationName'] as String?,
     );
   }
 
@@ -136,10 +174,10 @@ class TaskOffline {
 
 /// Status de sincronização da tarefa
 enum SyncStatus {
-  synced,    // Sincronizada com servidor
-  pending,   // Pendente de sincronização
-  conflict,  // Conflito detectado
-  error,     // Erro na sincronização
+  synced, // Sincronizada com servidor
+  pending, // Pendente de sincronização
+  conflict, // Conflito detectado
+  error, // Erro na sincronização
 }
 
 extension SyncStatusExtension on SyncStatus {

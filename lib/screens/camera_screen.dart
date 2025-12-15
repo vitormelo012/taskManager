@@ -69,7 +69,6 @@ class _CameraScreenState extends State<CameraScreen> {
         fit: StackFit.expand,
         children: [
           Center(child: CameraPreview(widget.controller)),
-
           Positioned(
             left: 0,
             right: 0,
@@ -91,12 +90,11 @@ class _CameraScreenState extends State<CameraScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     IconButton(
-                      onPressed: _isCapturing 
-                        ? null 
-                        : () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: Colors.white, size: 32),
+                      onPressed:
+                          _isCapturing ? null : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close,
+                          color: Colors.white, size: 32),
                     ),
-
                     GestureDetector(
                       onTap: _isCapturing ? null : _takePicture,
                       child: Container(
@@ -105,22 +103,22 @@ class _CameraScreenState extends State<CameraScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 4),
-                          color: _isCapturing 
-                            ? Colors.grey.withOpacity(0.5)
-                            : Colors.transparent,
+                          color: _isCapturing
+                              ? Colors.grey.withOpacity(0.5)
+                              : Colors.transparent,
                         ),
                         child: _isCapturing
-                          ? const Padding(
-                              padding: EdgeInsets.all(20),
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 3,
-                              ),
-                            )
-                          : const Icon(Icons.camera, color: Colors.white, size: 40),
+                            ? const Padding(
+                                padding: EdgeInsets.all(20),
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Icon(Icons.camera,
+                                color: Colors.white, size: 40),
                       ),
                     ),
-
                     const SizedBox(width: 48),
                   ],
                 ),

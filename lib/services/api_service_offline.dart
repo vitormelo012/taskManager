@@ -7,6 +7,9 @@ class ApiServiceOffline {
   static const String baseUrl = 'http://10.0.2.2:3000/api'; // Android emulator
   // static const String baseUrl = 'http://localhost:3000/api'; // iOS simulator
   
+  // Modo demo: simula servidor sem fazer requisições reais
+  static const bool demoMode = true; // Altere para false quando tiver servidor real
+
   final String userId;
 
   ApiServiceOffline({this.userId = 'user1'});
@@ -15,6 +18,17 @@ class ApiServiceOffline {
 
   /// Buscar todas as tarefas (com sync incremental)
   Future<Map<String, dynamic>> getTasks({int? modifiedSince}) async {
+    // Modo demo: simula resposta do servidor sem fazer requisição real
+    if (demoMode) {
+      await Future.delayed(const Duration(milliseconds: 500)); // Simula latência
+      return {
+        'success': true,
+        'tasks': <TaskOffline>[],
+        'lastSync': DateTime.now().millisecondsSinceEpoch,
+        'serverTime': DateTime.now().millisecondsSinceEpoch,
+      };
+    }
+    
     try {
       final uri = Uri.parse('$baseUrl/tasks').replace(
         queryParameters: {
@@ -24,8 +38,8 @@ class ApiServiceOffline {
       );
 
       final response = await http.get(uri).timeout(
-        const Duration(seconds: 10),
-      );
+            const Duration(seconds: 10),
+          );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -48,12 +62,23 @@ class ApiServiceOffline {
 
   /// Criar tarefa no servidor
   Future<TaskOffline> createTask(TaskOffline task) async {
+    // Modo demo: simula criação no servidor
+    if (demoMode) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      return task.copyWith(
+        version: 1,
+        updatedAt: DateTime.now(),
+      );
+    }
+    
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/tasks'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(task.toJson()),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/tasks'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode(task.toJson()),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
@@ -69,15 +94,29 @@ class ApiServiceOffline {
 
   /// Atualizar tarefa no servidor
   Future<Map<String, dynamic>> updateTask(TaskOffline task) async {
+    // Modo demo: simula atualização no servidor
+    if (demoMode) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      return {
+        'success': true,
+        'task': task.copyWith(
+          version: task.version + 1,
+          updatedAt: DateTime.now(),
+        ),
+      };
+    }
+    
     try {
-      final response = await http.put(
-        Uri.parse('$baseUrl/tasks/${task.id}'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          ...task.toJson(),
-          'version': task.version,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl/tasks/${task.id}'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              ...task.toJson(),
+              'version': task.version,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -104,10 +143,18 @@ class ApiServiceOffline {
 
   /// Deletar tarefa no servidor
   Future<bool> deleteTask(String id, int version) async {
+    // Modo demo: simula deleção no servidor
+    if (demoMode) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      return true;
+    }
+    
     try {
-      final response = await http.delete(
-        Uri.parse('$baseUrl/tasks/$id?version=$version'),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .delete(
+            Uri.parse('$baseUrl/tasks/$id?version=$version'),
+          )
+          .timeout(const Duration(seconds: 10));
 
       return response.statusCode == 200 || response.statusCode == 404;
     } catch (e) {
@@ -120,12 +167,20 @@ class ApiServiceOffline {
   Future<List<Map<String, dynamic>>> syncBatch(
     List<Map<String, dynamic>> operations,
   ) async {
+    // Modo demo: simula sincronização em lote
+    if (demoMode) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      return operations.map((op) => {'success': true, 'operation': op}).toList();
+    }
+    
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/sync/batch'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'operations': operations}),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/sync/batch'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'operations': operations}),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -142,9 +197,11 @@ class ApiServiceOffline {
   /// Verificar conectividade com servidor
   Future<bool> checkConnectivity() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/health'),
-      ).timeout(const Duration(seconds: 5));
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/health'),
+          )
+          .timeout(const Duration(seconds: 5));
 
       return response.statusCode == 200;
     } catch (e) {

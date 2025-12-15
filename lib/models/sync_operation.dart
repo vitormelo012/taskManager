@@ -98,3 +98,66 @@ enum SyncOperationStatus {
   completed,
   failed,
 }
+
+/// Tipo de evento de sincronização
+enum SyncEventType {
+  syncStarted,
+  syncCompleted,
+  syncError,
+  conflictResolved,
+}
+
+/// Evento de sincronização
+class SyncEvent {
+  final SyncEventType type;
+  final Map<String, dynamic> data;
+  final DateTime timestamp;
+
+  SyncEvent({
+    required this.type,
+    required this.data,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  factory SyncEvent.syncStarted() {
+    return SyncEvent(type: SyncEventType.syncStarted, data: {});
+  }
+
+  factory SyncEvent.syncCompleted({
+    required int pushedCount,
+    required int pulledCount,
+  }) {
+    return SyncEvent(
+      type: SyncEventType.syncCompleted,
+      data: {
+        'pushedCount': pushedCount,
+        'pulledCount': pulledCount,
+      },
+    );
+  }
+
+  factory SyncEvent.syncError(String error) {
+    return SyncEvent(
+      type: SyncEventType.syncError,
+      data: {'error': error},
+    );
+  }
+
+  factory SyncEvent.conflictResolved({
+    required String taskId,
+    required String resolution,
+  }) {
+    return SyncEvent(
+      type: SyncEventType.conflictResolved,
+      data: {
+        'taskId': taskId,
+        'resolution': resolution,
+      },
+    );
+  }
+
+  @override
+  String toString() {
+    return 'SyncEvent(type: $type, data: $data)';
+  }
+}
